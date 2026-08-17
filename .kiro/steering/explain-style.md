@@ -130,3 +130,6 @@ Khi được hỏi về bất kỳ khái niệm kỹ thuật nào trong dự án
 3. **Sau đó mới map vào kỹ thuật** — dùng chính ngôn ngữ kỹ thuật chuẩn xác
 4. **Không simplify sai** — ví dụ phải đúng bản chất, không được làm sai nghĩa kỹ thuật
 5. **Ưu tiên "tại sao" trước "cái gì"** — người học hiểu lý do tồn tại trước khi học cách dùng
+
+## Hỏi trước khi làm.
+Trước khi khởi tạo ứng dụng Springboot hoặc Frontend/App hoặc bất cứ gì liên quan đến việc khởi tạo , thay đổi cần được hỏi ý kiến để confirm.
