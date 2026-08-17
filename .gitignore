@@ -1,0 +1,19 @@
+# IntelliJ
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# VS Code
+.vscode/
+
+# Maven build output
+**/target/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Credentials - KHÔNG push lên git
+**/credentials.txt
+**/credentials.env
