@@ -1,9 +1,7 @@
 package com.example.demo.controller;
 
 // === Camunda SDK ===
-// ZeebeClient - đối tượng giao tiếp với Zeebe Engine (tạo instance, deploy, complete task...)
 import io.camunda.zeebe.client.ZeebeClient;
-// ProcessInstanceEvent - kết quả trả về sau khi tạo process instance
 import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 
 // === Spring ===
@@ -18,31 +16,33 @@ import java.util.Map;
 @RequestMapping("/api/v1/process")
 public class ProcessController {
 
-    // Spring tự inject ZeebeClient vào (đã được Camunda SDK tạo sẵn khi app khởi động)
     @Autowired
     private ZeebeClient zeebeClient;
 
     /**
-     * POST /api/v1/process/start
-     * Body: { "name": "Nguyen Van A" }
+     * Phase 1: Start process đơn giản (Service Task only)
+     * BPMN: Start → [say_hello] → End
      *
-     * Tạo 1 process instance mới → token bắt đầu chạy trong BPMN
+     * Mục đích: Tạo 1 process instance → token chạy → Worker tự xử lý → End
      */
     @PostMapping("/start")
     public ResponseEntity<Map<String, Object>> startProcess(@RequestBody Map<String, String> body) {
-
         String name = body.getOrDefault("name", "World");
 
-        // Gọi Zeebe: tạo instance của process "hello-camunda-process" (ID trong BPMN)
         ProcessInstanceEvent instance = zeebeClient
+                // newCreateInstanceCommand() — Gửi lệnh lên Zeebe: "tạo 1 instance mới"
                 .newCreateInstanceCommand()
-                .bpmnProcessId("hello-camunda-process")  // phải khớp ID bạn đặt trong Web Modeler
-                .latestVersion()                          // dùng version mới nhất đã deploy
-                .variables(Map.of("name", name))          // truyền variable "name" vào process
+                // bpmnProcessId() — Chỉ định chạy process nào (khớp ID trong BPMN đã deploy)
+                .bpmnProcessId("hello-camunda-process")
+                // latestVersion() — Dùng version mới nhất (nếu deploy nhiều lần, luôn chạy bản mới)
+                .latestVersion()
+                // variables() — Truyền dữ liệu đầu vào cho process (Worker sẽ đọc được)
+                .variables(Map.of("name", name))
+                // send() — Gửi request lên Zeebe qua gRPC
                 .send()
-                .join();                                   // đợi kết quả (blocking)
+                // join() — Đợi response trả về (blocking). Không join() → async, phải handle Future
+                .join();
 
-        // Trả về thông tin instance vừa tạo
         return ResponseEntity.ok(Map.of(
                 "message", "Process đã khởi tạo!",
                 "processInstanceKey", instance.getProcessInstanceKey(),
@@ -50,6 +50,12 @@ public class ProcessController {
         ));
     }
 
+    /**
+     * Phase 2: Start process có User Task
+     * BPMN: Start → [Auto Validate] → [Phê duyệt 👤] → End
+     *
+     * Mục đích: Tạo instance → Worker validate tự động → token DỪNG ở User Task → chờ complete
+     */
     @PostMapping("/start-approval")
     public ResponseEntity<Map<String, Object>> startApproval(@RequestBody Map<String, String> body) {
         String name = body.getOrDefault("name", "World");
@@ -69,10 +75,12 @@ public class ProcessController {
     }
 
     /**
-     * POST /api/v1/process/tasks/{taskKey}/complete
-     * Body: { "approved": true }
+     * Complete User Task bằng API
      *
-     * Complete User Task — giả lập người bấm "Phê duyệt"
+     * Mục đích: Giả lập người dùng bấm "Hoàn thành" trên UI
+     * Khi gọi → token tại User Task đó sẽ đi tiếp trong BPMN
+     *
+     * Lưu ý: SDK 8.5 có thể gặp lỗi SSL với lệnh này → dùng Tasklist UI thay thế
      */
     @PostMapping("/tasks/{taskKey}/complete")
     public ResponseEntity<Map<String, Object>> completeTask(
@@ -80,7 +88,11 @@ public class ProcessController {
             @RequestBody Map<String, Object> variables) {
 
         zeebeClient
+                // newUserTaskCompleteCommand() — Gửi lệnh "complete User Task" lên Zeebe
+                // Khác với newCompleteCommand() (dùng cho Service Task/Job)
                 .newUserTaskCompleteCommand(taskKey)
+                // variables() — Truyền thêm data khi complete (vd: approved=true, decision="PASS")
+                // Merge vào instance, Gateway sẽ đọc để rẽ nhánh
                 .variables(variables)
                 .send()
                 .join();
@@ -91,4 +103,26 @@ public class ProcessController {
         ));
     }
 
+    /**
+     * Phase 4: Start process multi-role (RM → Checker → Gateway → Phê duyệt)
+     * BPMN: Start → [RM 👤] → [Checker 👤] → <XOR> → [Phê duyệt 👤] / End / quay lại RM
+     *
+     * Mục đích: Test luồng nhiều bước, nhiều vai trò, có case "yêu cầu bổ sung" (RETURN)
+     * Variable `decision` quyết định Gateway rẽ nhánh: "PASS" / "REJECT" / "RETURN"
+     */
+    @PostMapping("/start-multi-role")
+    public ResponseEntity<Map<String, Object>> startMultiRole(@RequestBody Map<String, String> body) {
+        ProcessInstanceEvent instance = zeebeClient
+                .newCreateInstanceCommand()
+                .bpmnProcessId("multi-role-process")
+                .latestVersion()
+                .variables(Map.of("name", body.getOrDefault("name", "World")))
+                .send()
+                .join();
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Multi-role process đã khởi tạo!",
+                "processInstanceKey", instance.getProcessInstanceKey()
+        ));
+    }
 }
